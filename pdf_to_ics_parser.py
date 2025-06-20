@@ -95,11 +95,13 @@ def extract_events_from_pdf(pdf_path):
     return events
 
 
-def create_ics_file(events, output_path):
+def create_ics_file(cutoff_date, events, output_path):
     calendar = Calendar()
     prev_event_data = None
     start_or_end = "period_start"
     for event_data in events:
+        # TODO add handling overnight fligts
+        # print(event_data)
         event = Event()
         event.name = f"LO{event_data['flight_no']} z {event_data['departure_airport']} do {event_data['destination_airport']}"
         event.description = fr"""Link działa prawidłowo tylko na komputerze i gdy samolot jest online: https://www.flightradar24.com/LO{event_data["flight_no"]}
@@ -134,9 +136,12 @@ W innym wypadku lepiej korzystać z tego i ręcznie wybrać śledzenie: https://
         # konwersja na odpowiednią strefę czasową (to właściwie nie jest konieczne,
         # bo przynajmniej kalendarz Google dobrze to wyświetla niezależnie od strefy którą zapiszę do pliku)
         dt_warsaw_end = datetime_for_event_end.astimezone(ZoneInfo("Europe/Warsaw"))
-        event.begin = dt_warsaw_begin
-        event.end = dt_warsaw_end
-        calendar.events.add(event)
+        if dt_warsaw_begin > cutoff_date:
+            event.begin = dt_warsaw_begin
+            event.end = dt_warsaw_end
+            calendar.events.add(event)
+        else:
+            pass
         prev_event_data = event_data
     with open(output_path, "w", encoding="utf-8") as f:
         f.writelines(calendar)
@@ -144,8 +149,9 @@ W innym wypadku lepiej korzystać z tego i ręcznie wybrać śledzenie: https://
 
 # %%
 if __name__ == "__main__":
-    pdf_path = "roster.pdf"
-    output_path = "events.ics"
+    pdf_path = "20250601_20250731_roster.pdf"
+    output_path = "20250701_20250731_calendar.ics"
+    cutoff_date = datetime(2025, 6, 30, 0, 0, tzinfo=ZoneInfo("Europe/Warsaw"))
     events = extract_events_from_pdf(pdf_path)
-    create_ics_file(events, output_path)
+    create_ics_file(cutoff_date, events, output_path)
 # %%
