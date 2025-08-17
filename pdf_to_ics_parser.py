@@ -104,8 +104,7 @@ def create_ics_file(cutoff_date, events, output_path):
         # print(event_data)
         event = Event()
         event.name = f"LO{event_data['flight_no']} z {event_data['departure_airport']} do {event_data['destination_airport']}"
-        event.description = fr"""Link działa prawidłowo tylko na komputerze i gdy samolot jest online: https://www.flightradar24.com/LO{event_data["flight_no"]}
-W innym wypadku lepiej korzystać z tego i ręcznie wybrać śledzenie: https://www.flightradar24.com/data/flights/LO{event_data["flight_no"]}
+        event.description = fr"""Tabela lotów: https://www.flightradar24.com/data/flights/LO{event_data["flight_no"]}
 """
         # sprawdzenie czy poprzedni lot miał "wyższy" dzień niż obecny, wtedy należy wziąć miesiąc i rok z końca okresu
         # znów nazwa zmiennej nie jest idealna, ale z grubsza mówi ocb
@@ -149,9 +148,9 @@ W innym wypadku lepiej korzystać z tego i ręcznie wybrać śledzenie: https://
 
 # %%
 if __name__ == "__main__":
-    pdf_path = "20250601_20250731_roster.pdf"
-    output_path = "20250701_20250731_calendar.ics"
-    cutoff_date = datetime(2025, 6, 30, 0, 0, tzinfo=ZoneInfo("Europe/Warsaw"))
+    pdf_path = "20250817_roster.pdf"
+    output_path = "20250901_20250930_calendar.ics"
+    cutoff_date = datetime(2025, 9, 1, 0, 0, tzinfo=ZoneInfo("Europe/Warsaw"))
     events = extract_events_from_pdf(pdf_path)
     create_ics_file(cutoff_date, events, output_path)
 # %%
