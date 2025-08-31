@@ -19,7 +19,7 @@ class RosterParser:
     )
     
     @staticmethod
-    def parse_period(lines: List[str]) -> Tuple[datetime, datetime]:
+    def parse_period(lines: List[str]) -> Tuple[datetime, datetime, datetime]:
         """
         Extract period dates from PDF header
         
@@ -36,13 +36,17 @@ class RosterParser:
             raise RosterParsingError("PDF doesn't contain enough data to parse period.")
         
         try:
+            cutoff_parts = lines[0].split(" ")
+            if len(cutoff_parts) < 7:
+                raise RosterParsingError("Cannot parse cutoff from PDF header. Expected format not found.")
             period_parts = lines[1].split(" ")
             if len(period_parts) < 3:
                 raise RosterParsingError("Cannot parse period from PDF header. Expected format not found.")
             
             period_start = datetime.strptime(period_parts[1], "%d%b%y")
             period_end = datetime.strptime(period_parts[2], "%d%b%y")
-            return period_start, period_end
+            min_cutoff_datetime = datetime.strptime(cutoff_parts[5], "%d%b%y")
+            return period_start, period_end, min_cutoff_datetime
         except (ValueError, IndexError) as e:
             raise RosterParsingError(f"Error parsing period dates: {e}")
     
@@ -158,7 +162,7 @@ class RosterParser:
             return None
     
     @classmethod
-    def parse_flights_from_pdf_lines(cls, lines: List[str]) -> List[FlightEvent]:
+    def parse_flights_from_pdf_lines(cls, lines: List[str]) -> Tuple[List[FlightEvent], datetime]:
         """
         Complete parsing pipeline from PDF lines to FlightEvent objects
         
@@ -173,7 +177,7 @@ class RosterParser:
         """
         try:
             # Parse period information
-            period_start, period_end = cls.parse_period(lines)
+            period_start, period_end, min_cutoff_datetime = cls.parse_period(lines)
             
             # Extract work sections
             sections = cls.extract_work_sections(lines)
@@ -183,12 +187,22 @@ class RosterParser:
             
             # Parse flights into events
             events = []
+            prev_event = None
+            use_period_end = False
+            period_switched = False
             for flight_line in flight_lines:
                 event = cls.parse_flight_to_event(flight_line, period_start, period_end)
                 if event:
+                    if not period_switched:
+                        if (prev_event is not None) and (prev_event.day_of_month > event.day_of_month):
+                            use_period_end = True
+                            period_switched = True
+                    event.set_departure_datetime(use_period_end)
+                    event.set_arrival_datetime(use_period_end)
+                    print(event)
                     events.append(event)
-            
-            return events
+                    prev_event = event
+            return events, min_cutoff_datetime
         
         except Exception as e:
             if isinstance(e, RosterParsingError):

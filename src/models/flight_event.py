@@ -18,11 +18,13 @@ class FlightEvent:
     day_of_week: str
     period_start: datetime
     period_end: datetime
-    
-    def get_departure_datetime(self, use_period_end: bool = False) -> datetime:
-        """Get departure datetime with proper timezone"""
+    departure_datetime: datetime = None
+    arrival_datetime: datetime = None
+
+    def set_departure_datetime(self, use_period_end: bool = False) -> datetime:
+        """Set departure datetime with proper timezone"""
         base_date = self.period_end if use_period_end else self.period_start
-        return datetime(
+        self.departure_datetime = datetime(
             base_date.year,
             base_date.month,
             self.day_of_month,
@@ -30,11 +32,11 @@ class FlightEvent:
             int(self.departure_time[2:]),
             tzinfo=ZoneInfo("UTC")
         ).astimezone(ZoneInfo("Europe/Warsaw"))
-    
-    def get_arrival_datetime(self, use_period_end: bool = False) -> datetime:
-        """Get arrival datetime with proper timezone"""
+        
+    def set_arrival_datetime(self, use_period_end: bool = False) -> datetime:
+        """Set arrival datetime with proper timezone"""
         base_date = self.period_end if use_period_end else self.period_start
-        return datetime(
+        self.arrival_datetime = datetime(
             base_date.year,
             base_date.month,
             self.day_of_month,

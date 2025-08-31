@@ -48,18 +48,27 @@ def process_roster_pdf(pdf_file, cutoff_datetime=None):
         
         # Parse flights from PDF lines (with cutoff filtering)
         st.write("🔍 Parsing flights from PDF...")
-        events = RosterParser.parse_flights_from_pdf_lines(lines)
-        if cutoff_datetime:
+        events, min_cutoff_datetime = RosterParser.parse_flights_from_pdf_lines(lines)
+        if cutoff_datetime and (cutoff_datetime > min_cutoff_datetime):
+            events = [event for event in events if (event.departure_datetime.date() >= cutoff_datetime.date()) 
+                      & (event.departure_datetime is not None)]
             st.write(f"✅ Found {len(events)} flight events after {cutoff_datetime.date()}")
+        elif cutoff_datetime and (cutoff_datetime <= min_cutoff_datetime):
+            events = [event for event in events if (event.departure_datetime.date() >= min_cutoff_datetime.date()) 
+                      & (event.departure_datetime is not None)]
+            st.write(f"Selected earlier cutoff date than minimal expected, changing to minimal based on file {min_cutoff_datetime.strftime("%Y-%m-%d")}")
+            st.write(f"✅ Found {len(events)} flight events after {min_cutoff_datetime.date()}")
         else:
-            st.write(f"✅ Found {len(events)} flight events")
+            st.write(f"Cutoff datetime was not selected, changing to minimal based on file {min_cutoff_datetime.strftime("%Y-%m-%d")}")
+            events = [event for event in events if (event.departure_datetime.date() >= min_cutoff_datetime.date()) 
+                      & (event.departure_datetime is not None)]
+            st.write(f"✅ Found {len(events)} flight events after {min_cutoff_datetime.date()}")
         
         # Show some debug info
         if events:
             st.write("📋 First few flights found:")
             for i, event in enumerate(events[:3]):
-                departure_dt = event.get_departure_datetime()
-                st.write(f"  - LO{event.flight_no}: {event.departure_airport} → {event.destination_airport} ({departure_dt.strftime('%Y-%m-%d %H:%M')})")
+                st.write(f"  - LO{event.flight_no}: {event.departure_airport} → {event.destination_airport} ({event.departure_datetime.strftime('%Y-%m-%d %H:%M')})")
         
         return events
     
@@ -103,7 +112,7 @@ def display_flight_summary(events):
     flight_data = []
     for event in events:
         flight_data.append({
-            "Date": f"{event.day_of_month} {event.day_of_week}",
+            "Date": f"{event.departure_datetime.strftime("%Y-%m-%d")}",
             "Flight": f"LO{event.flight_no}",
             "Route": f"{event.departure_airport} → {event.destination_airport}",
             "Departure": f"{event.departure_time[:2]}:{event.departure_time[2:]}",
@@ -245,9 +254,11 @@ def main():
         # Re-filter cached events based on current cutoff
         filtered_events = []
         for event in st.session_state.events:
-            departure_dt = event.get_departure_datetime()
-            if departure_dt > cutoff_datetime:
+            departure_dt = event.departure_datetime
+            if (cutoff_datetime is not None) and (departure_dt.date() >= cutoff_datetime.date()):
                 filtered_events.append(event)
+            else:
+                filtered_events = st.session_state.events
         
         if filtered_events:
             display_flight_summary(filtered_events)

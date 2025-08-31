@@ -29,20 +29,12 @@ class CalendarGenerator:
             calendar = Calendar()
             
             for i, flight in enumerate(events):
-                # Determine if we should use period_end (for month rollover)
-                use_period_end = (
-                    i > 0 and 
-                    events[i-1].day_of_month > flight.day_of_month
-                )
-                
-                departure_dt = flight.get_departure_datetime(use_period_end)
-                arrival_dt = flight.get_arrival_datetime(use_period_end)
                 
                 event = Event()
                 event.name = flight.display_name
                 event.description = CalendarGenerator._create_event_description(flight)
-                event.begin = departure_dt
-                event.end = arrival_dt
+                event.begin = flight.departure_datetime
+                event.end = flight.arrival_datetime
                 
                 calendar.events.add(event)
             
