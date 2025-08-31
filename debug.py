@@ -7,14 +7,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 # zczytanie tekstu z pdfa i podział na linie
 pdf_path = r"F:\PC_BIALY\GIT REPOS\flights-schedule-app\20250601_20250731_roster.pdf"
-pdf_path = r"F:\PC_BIALY\GIT REPOS\flights-schedule-app\20250817_roster.pdf"
+# pdf_path = r"F:\PC_BIALY\GIT REPOS\flights-schedule-app\20250817_roster.pdf"
 lines = []
 with pdfplumber.open(pdf_path) as pdf:
     for page in pdf.pages:
         for line in page.extract_text().split("\n"):
             lines.append(line)
 # %%
-lines[0]
+for i, line in enumerate(lines):
+    print(i)
+    print(line)
 # %%
 text = lines[0]
 pattern = r'\b(\d{1,2}[A-Za-z]{3}\d{2})\b'

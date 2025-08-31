@@ -124,14 +124,13 @@ def display_flight_summary(events):
 
 def render_sidebar():
     """Render sidebar with instructions and information"""
-    st.sidebar.header("📋 Instructions")
+    st.sidebar.header("⚠️ Disclaimer")
     st.sidebar.markdown("""
-    1. Upload your roster PDF file
-    2. Set the cutoff date (flights before this date will be excluded)
-    3. Click 'Process PDF' to extract flights
-    4. Download the generated calendar file
-    5. Import the .ics file to your calendar app (Google Calendar, Outlook, etc.)
-    """)
+                        The owner of this application is not responsible for any errors, inaccuracies, 
+                        or misinterpretations in the outputs provided. Users are solely responsible for 
+                        verifying and cross-checking all outputs against their original inputs 
+                        before relying on or acting upon them.
+                        """)
     
     st.sidebar.header("ℹ️ About")
     st.sidebar.markdown("""
@@ -150,6 +149,22 @@ def render_sidebar():
     - Supported format: PDF only
     - Text-based PDFs (not scanned images)
     """)
+
+    st.sidebar.header("📋 Instructions")
+    st.sidebar.markdown("""
+    1. Upload your roster PDF file
+    2. Set the cutoff date (flights before this date will be excluded)
+    3. Click 'Process PDF' to extract flights
+    4. Download the generated calendar file
+    5. Import the .ics file to your calendar app (Google Calendar, Outlook, etc.)
+    """)
+
+    st.sidebar.header("🤝 Help Us Improve")
+    st.sidebar.markdown("""
+                        If you have any feedback or feature requests about the app, you can share them via [email](mailto:hawkuu9@gmail.com)
+                        
+                        If you found this app useful, please consider supporting [people](https://www.siepomaga.pl/) or [animals](https://www.ratujemyzwierzaki.pl/) in need.
+                        """)
 
 
 def main():
