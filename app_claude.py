@@ -10,7 +10,6 @@ from src.processors.pdf_processor import PDFProcessor
 from src.processors.roster_parser import RosterParser
 from src.generators.calendar_generator import CalendarGenerator
 from src.utils.exceptions import (
-    FlightRosterError, 
     PDFProcessingError, 
     RosterParsingError, 
     CalendarGenerationError
