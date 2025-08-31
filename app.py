@@ -48,7 +48,7 @@ def process_roster_pdf(pdf_file, cutoff_datetime=None):
         
         # Parse flights from PDF lines (with cutoff filtering)
         st.write("🔍 Parsing flights from PDF...")
-        events = RosterParser.parse_flights_from_pdf_lines(lines, cutoff_datetime)
+        events = RosterParser.parse_flights_from_pdf_lines(lines)
         if cutoff_datetime:
             st.write(f"✅ Found {len(events)} flight events after {cutoff_datetime.date()}")
         else:
@@ -195,7 +195,7 @@ def main():
             with st.spinner("Processing PDF..."):
                 # Extract events with cutoff filtering
                 events = process_roster_pdf(uploaded_file, cutoff_datetime)
-                
+
                 if events:
                     # Store in session state
                     st.session_state.events = events
