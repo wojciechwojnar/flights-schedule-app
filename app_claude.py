@@ -19,6 +19,11 @@ def extract_events_from_pdf(pdf_file):
     """Extract flight events from uploaded PDF file"""
     lines = []
     
+    # Check file size (50MB limit)
+    if pdf_file.size > 50 * 1024 * 1024:
+        st.error("File too large. Please upload a file smaller than 50MB.")
+        return []
+    
     # Save uploaded file to temporary location
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         tmp_file.write(pdf_file.getvalue())
@@ -26,14 +31,28 @@ def extract_events_from_pdf(pdf_file):
     
     try:
         with pdfplumber.open(tmp_path) as pdf:
+            if not pdf.pages:
+                st.error("PDF file appears to be empty or corrupted.")
+                return []
+                
             for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    for line in page_text.split("\n"):
-                        lines.append(line)
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        for line in page_text.split("\n"):
+                            lines.append(line)
+                except Exception as e:
+                    st.warning(f"Could not extract text from page {page.page_number}: {e}")
+                    continue
+    except Exception as e:
+        st.error(f"Error reading PDF file: {e}")
+        return []
     finally:
         # Clean up temporary file
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass  # File might already be deleted
     
     if len(lines) < 2:
         st.error("PDF doesn't contain enough data. Please check if the file is correct.")
@@ -173,6 +192,12 @@ def create_ics_file(cutoff_date, events):
 def main():
     st.title("✈️ Flight Roster to Calendar Converter")
     st.markdown("Convert your LOT Polish Airlines roster PDF to a calendar (.ics) file")
+    
+    # Initialize session state
+    if 'events' not in st.session_state:
+        st.session_state.events = []
+    if 'processed_file_name' not in st.session_state:
+        st.session_state.processed_file_name = None
     
     # Sidebar with instructions
     st.sidebar.header("📋 Instructions")
