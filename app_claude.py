@@ -4,9 +4,10 @@ import pdfplumber
 from ics import Calendar, Event
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import io
 import tempfile
 import os
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 # Set page config
 st.set_page_config(
@@ -15,178 +16,243 @@ st.set_page_config(
     layout="wide"
 )
 
-def extract_events_from_pdf(pdf_file):
-    """Extract flight events from uploaded PDF file"""
-    lines = []
+
+@dataclass
+class FlightEvent:
+    """Represents a single flight event"""
+    flight_no: str
+    departure_airport: str
+    destination_airport: str
+    departure_time: str
+    arrival_time: str
+    day_of_month: int
+    day_of_week: str
+    period_start: datetime
+    period_end: datetime
     
-    # Check file size (50MB limit)
-    if pdf_file.size > 50 * 1024 * 1024:
-        st.error("File too large. Please upload a file smaller than 50MB.")
-        return []
+    def get_departure_datetime(self, use_period_end: bool = False) -> datetime:
+        """Get departure datetime with proper timezone"""
+        base_date = self.period_end if use_period_end else self.period_start
+        return datetime(
+            base_date.year,
+            base_date.month,
+            self.day_of_month,
+            int(self.departure_time[:2]),
+            int(self.departure_time[2:]),
+            tzinfo=ZoneInfo("UTC")
+        ).astimezone(ZoneInfo("Europe/Warsaw"))
     
-    # Save uploaded file to temporary location
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-        tmp_file.write(pdf_file.getvalue())
-        tmp_path = tmp_file.name
+    def get_arrival_datetime(self, use_period_end: bool = False) -> datetime:
+        """Get arrival datetime with proper timezone"""
+        base_date = self.period_end if use_period_end else self.period_start
+        return datetime(
+            base_date.year,
+            base_date.month,
+            self.day_of_month,
+            int(self.arrival_time[:2]),
+            int(self.arrival_time[2:]),
+            tzinfo=ZoneInfo("UTC")
+        ).astimezone(ZoneInfo("Europe/Warsaw"))
+
+class PDFProcessor:
+    """Handles PDF text extraction and validation"""
     
-    try:
-        with pdfplumber.open(tmp_path) as pdf:
-            if not pdf.pages:
-                st.error("PDF file appears to be empty or corrupted.")
-                return []
-                
-            for page in pdf.pages:
-                try:
-                    page_text = page.extract_text()
-                    if page_text:
-                        for line in page_text.split("\n"):
-                            lines.append(line)
-                except Exception as e:
-                    st.warning(f"Could not extract text from page {page.page_number}: {e}")
-                    continue
-    except Exception as e:
-        st.error(f"Error reading PDF file: {e}")
-        return []
-    finally:
-        # Clean up temporary file
+    @staticmethod
+    def extract_text_from_pdf(pdf_file) -> List[str]:
+        """Extract text lines from PDF file"""
+        if pdf_file.size > 50 * 1024 * 1024:
+            raise ValueError("File too large. Maximum size is 50MB.")
+        
+        lines = []
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(pdf_file.getvalue())
+            tmp_path = tmp_file.name
+        
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass  # File might already be deleted
-    
-    if len(lines) < 2:
-        st.error("PDF doesn't contain enough data. Please check if the file is correct.")
-        return []
-    
-    try:
-        # Extract period from second line
-        period_parts = lines[1].split(" ")
-        if len(period_parts) < 3:
-            st.error("Cannot parse period from PDF. Expected format in second line.")
-            return []
-            
-        period_start = datetime.strptime(period_parts[1], "%d%b%y")
-        period_end = datetime.strptime(period_parts[2], "%d%b%y")
-    except (ValueError, IndexError) as e:
-        st.error(f"Error parsing period dates: {e}")
-        return []
+            with pdfplumber.open(tmp_path) as pdf:
+                if not pdf.pages:
+                    raise ValueError("PDF file appears to be empty or corrupted.")
+                
+                for page in pdf.pages:
+                    try:
+                        page_text = page.extract_text()
+                        if page_text:
+                            lines.extend(page_text.split("\n"))
+                    except Exception as e:
+                        st.warning(f"Could not extract text from page {page.page_number}: {e}")
+                        continue
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        
+        return lines
 
-    # Split into work days
-    collect = False
-    section = []
-    sections = []
+class RosterParser:
+    """Parses roster data from PDF text lines"""
     
-    for line in lines[3:]:
-        match_workday_start_date = re.match(
-            r"^(\d{1,2})\.\s([A-Za-z]{3})\sC/I\s([A-Za-z]{3})", line
+    # Regex patterns as class constants
+    WORKDAY_PATTERN = re.compile(r"^(\d{1,2})\.\s([A-Za-z]{3})\sC/I\s([A-Za-z]{3})")
+    FLIGHT_PATTERN = re.compile(r"^LO (\d{1,5})")
+    FULL_FLIGHT_PATTERN = re.compile(
+        r"^(\d{1,2})\.\s([A-Za-z]{3})\sLO\s(\d{1,5})\s([A-Za-z]{3})\s(\d{4})\s(\d{4})\s([A-Za-z]{3})"
+    )
+    
+    @staticmethod
+    def parse_period(lines: List[str]) -> Tuple[datetime, datetime]:
+        """Extract period dates from PDF header"""
+        if len(lines) < 2:
+            raise ValueError("PDF doesn't contain enough data.")
+        
+        try:
+            period_parts = lines[1].split(" ")
+            if len(period_parts) < 3:
+                raise ValueError("Cannot parse period from PDF header.")
+            
+            period_start = datetime.strptime(period_parts[1], "%d%b%y")
+            period_end = datetime.strptime(period_parts[2], "%d%b%y")
+            return period_start, period_end
+        except (ValueError, IndexError) as e:
+            raise ValueError(f"Error parsing period dates: {e}")
+    
+    @classmethod
+    def extract_work_sections(cls, lines: List[str]) -> List[List[str]]:
+        """Extract work day sections from PDF lines"""
+        sections = []
+        current_section = []
+        collecting = False
+        current_day = None
+        current_weekday = None
+        
+        for line in lines[3:]:  # Skip header lines
+            # Check for workday start
+            workday_match = cls.WORKDAY_PATTERN.match(line)
+            if workday_match:
+                current_day = workday_match.group(1)
+                current_weekday = workday_match.group(2)
+            
+            # Start collecting when we see C/I
+            if "C/I" in line:
+                collecting = True
+                current_section.append(line)
+                continue
+            
+            # Stop collecting and save section when we see C/O
+            if "C/O" in line:
+                current_section.append(line)
+                collecting = False
+                if current_section:
+                    sections.append(current_section)
+                current_section = []
+                continue
+            
+            # Add flight lines to current section
+            if collecting:
+                flight_match = cls.FLIGHT_PATTERN.match(line)
+                if flight_match:
+                    current_section.append(f"{current_day}. {current_weekday} {line}")
+                else:
+                    current_section.append(line)
+        
+        return sections
+    
+    @classmethod
+    def extract_flights_from_sections(cls, sections: List[List[str]]) -> List[str]:
+        """Extract flight lines from work sections"""
+        flights = []
+        for section in sections:
+            for entry in section:
+                if cls.WORKDAY_PATTERN.match(entry.split("LO")[0] + "LO") if "LO" in entry else False:
+                    flights.append(entry)
+        return flights
+    
+    @classmethod
+    def parse_flight_to_event(cls, flight_line: str, period_start: datetime, period_end: datetime) -> Optional[FlightEvent]:
+        """Parse a flight line into a FlightEvent object"""
+        match = cls.FULL_FLIGHT_PATTERN.match(flight_line)
+        if not match:
+            return None
+        
+        return FlightEvent(
+            day_of_month=int(match.group(1)),
+            day_of_week=match.group(2),
+            flight_no=match.group(3),
+            departure_airport=match.group(4),
+            departure_time=match.group(5),
+            arrival_time=match.group(6),
+            destination_airport=match.group(7),
+            period_start=period_start,
+            period_end=period_end
         )
-        
-        if match_workday_start_date:
-            day = match_workday_start_date.group(1)
-            weekday = match_workday_start_date.group(2)
-        
-        match_flight = re.match(r"^LO (\d{1,5})", line)
-        
-        if "C/I" in line:
-            collect = True
-            section.append(line)
-            continue
-            
-        if "C/O" in line:
-            section.append(line)
-            collect = False
-            sections.append(section)
-            section = []
-            
-        if collect and match_flight:
-            section.append(f"{day}. {weekday} " + line)
-            
-        if collect and not match_flight:
-            section.append(line)
 
-    # Extract flights
-    flights = []
-    for section in sections:
-        for entry in section:
-            match_flight = re.match(
-                r"^(\d{1,2})\.\s([A-Za-z]{3})\sLO\s(\d{1,5})", entry
+class CalendarGenerator:
+    """Generates ICS calendar files from flight events"""
+    
+    @staticmethod
+    def create_ics_from_events(events: List[FlightEvent], cutoff_date: datetime) -> str:
+        """Create ICS calendar content from flight events"""
+        calendar = Calendar()
+        
+        for i, flight in enumerate(events):
+            # Determine if we should use period_end (for month rollover)
+            use_period_end = (
+                i > 0 and 
+                events[i-1].day_of_month > flight.day_of_month
             )
-            if match_flight:
-                flights.append(entry)
-
-    # Create event dictionaries
-    events = []
-    for flight in flights:
-        match_flight = re.match(
-            r"^(\d{1,2})\.\s([A-Za-z]{3})\sLO\s(\d{1,5})\s([A-Za-z]{3})\s(\d{4})\s(\d{4})\s([A-Za-z]{3})",
-            flight,
-        )
-        if match_flight:
-            event = {
-                "period_start": period_start,
-                "period_end": period_end,
-                "flight_day_of_month": int(match_flight.group(1)),
-                "flight_day_of_week": match_flight.group(2),
-                "flight_no": match_flight.group(3),
-                "departure_airport": match_flight.group(4),
-                "planned_departure_time": match_flight.group(5),
-                "planned_landing_time": match_flight.group(6),
-                "destination_airport": match_flight.group(7),
-            }
-            events.append(event)
-    
-    return events
-
-def create_ics_file(cutoff_date, events):
-    """Create ICS calendar file from events"""
-    calendar = Calendar()
-    prev_event_data = None
-    start_or_end = "period_start"
-    
-    for event_data in events:
-        event = Event()
-        event.name = f"LO{event_data['flight_no']} z {event_data['departure_airport']} do {event_data['destination_airport']}"
-        event.description = f"Tabela lotów: https://www.flightradar24.com/data/flights/LO{event_data['flight_no']}"
-        
-        # Check if previous flight had higher day number than current
-        if (prev_event_data is not None) and (
-            prev_event_data["flight_day_of_month"] > event_data["flight_day_of_month"]
-        ):
-            start_or_end = "period_end"
             
-        # Create datetime for event begin
-        datetime_for_event_begin = datetime(
-            event_data[start_or_end].date().year,
-            event_data[start_or_end].date().month,
-            event_data["flight_day_of_month"],
-            int(event_data["planned_departure_time"][:2]),
-            int(event_data["planned_departure_time"][2:]),
-            tzinfo=ZoneInfo("UTC"),
-        )
-        
-        # Convert to Warsaw timezone
-        dt_warsaw_begin = datetime_for_event_begin.astimezone(ZoneInfo("Europe/Warsaw"))
-        
-        datetime_for_event_end = datetime(
-            event_data[start_or_end].date().year,
-            event_data[start_or_end].date().month,
-            event_data["flight_day_of_month"],
-            int(event_data["planned_landing_time"][:2]),
-            int(event_data["planned_landing_time"][2:]),
-            tzinfo=ZoneInfo("UTC"),
-        )
-        
-        # Convert to Warsaw timezone
-        dt_warsaw_end = datetime_for_event_end.astimezone(ZoneInfo("Europe/Warsaw"))
-        
-        if dt_warsaw_begin > cutoff_date:
-            event.begin = dt_warsaw_begin
-            event.end = dt_warsaw_end
+            departure_dt = flight.get_departure_datetime(use_period_end)
+            arrival_dt = flight.get_arrival_datetime(use_period_end)
+            
+            # Skip flights before cutoff date
+            if departure_dt <= cutoff_date:
+                continue
+            
+            event = Event()
+            event.name = f"LO{flight.flight_no} {flight.departure_airport} → {flight.destination_airport}"
+            event.description = f"Flight: LO{flight.flight_no}\nRoute: {flight.departure_airport} → {flight.destination_airport}\nTracker: https://www.flightradar24.com/data/flights/LO{flight.flight_no}"
+            event.begin = departure_dt
+            event.end = arrival_dt
+            
             calendar.events.add(event)
-            
-        prev_event_data = event_data
+        
+        return calendar.serialize()
+
+def extract_events_from_pdf(pdf_file) -> List[FlightEvent]:
+    """Main function to extract flight events from PDF file"""
+    try:
+        # Extract text from PDF
+        lines = PDFProcessor.extract_text_from_pdf(pdf_file)
+        
+        # Parse period information
+        period_start, period_end = RosterParser.parse_period(lines)
+        
+        # Extract work sections
+        sections = RosterParser.extract_work_sections(lines)
+        
+        # Extract flight lines
+        flight_lines = RosterParser.extract_flights_from_sections(sections)
+        
+        # Parse flights into events
+        events = []
+        for flight_line in flight_lines:
+            event = RosterParser.parse_flight_to_event(flight_line, period_start, period_end)
+            if event:
+                events.append(event)
+        
+        return events
     
-    return calendar.serialize()
+    except Exception as e:
+        st.error(f"Error processing PDF: {e}")
+        return []
+
+def create_ics_file(cutoff_date: datetime, events: List[FlightEvent]) -> str:
+    """Create ICS calendar file from flight events"""
+    try:
+        return CalendarGenerator.create_ics_from_events(events, cutoff_date)
+    except Exception as e:
+        st.error(f"Error creating calendar file: {e}")
+        return ""
 
 # Streamlit UI
 def main():
@@ -264,11 +330,11 @@ def main():
                     flight_data = []
                     for event in events:
                         flight_data.append({
-                            "Date": f"{event['flight_day_of_month']} {event['flight_day_of_week']}",
-                            "Flight": f"LO{event['flight_no']}",
-                            "Route": f"{event['departure_airport']} → {event['destination_airport']}",
-                            "Departure": f"{event['planned_departure_time'][:2]}:{event['planned_departure_time'][2:]}",
-                            "Arrival": f"{event['planned_landing_time'][:2]}:{event['planned_landing_time'][2:]}"
+                            "Date": f"{event.day_of_month} {event.day_of_week}",
+                            "Flight": f"LO{event.flight_no}",
+                            "Route": f"{event.departure_airport} → {event.destination_airport}",
+                            "Departure": f"{event.departure_time[:2]}:{event.departure_time[2:]}",
+                            "Arrival": f"{event.arrival_time[:2]}:{event.arrival_time[2:]}"
                         })
                     
                     st.dataframe(flight_data, use_container_width=True)
@@ -280,8 +346,8 @@ def main():
                         if ics_content:
                             # Generate filename
                             if events:
-                                start_date = events[0]['period_start'].strftime("%Y%m%d")
-                                end_date = events[0]['period_end'].strftime("%Y%m%d")
+                                start_date = events[0].period_start.strftime("%Y%m%d")
+                                end_date = events[0].period_end.strftime("%Y%m%d")
                                 filename = f"{start_date}_{end_date}_flights.ics"
                             else:
                                 filename = "flights.ics"
