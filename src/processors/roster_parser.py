@@ -86,7 +86,7 @@ class RosterParser:
                 continue
             
             # Add flight lines to current section
-            if collecting and current_day is not None and current_weekday is not None:
+            if collecting and current_day and current_weekday:
                 flight_match = cls.FLIGHT_PATTERN.match(line)
                 if flight_match:
                     current_section.append(f"{current_day}. {current_weekday} {line}")
@@ -158,15 +158,16 @@ class RosterParser:
             return None
     
     @classmethod
-    def parse_flights_from_pdf_lines(cls, lines: List[str]) -> List[FlightEvent]:
+    def parse_flights_from_pdf_lines(cls, lines: List[str], cutoff_datetime: Optional[datetime] = None) -> List[FlightEvent]:
         """
         Complete parsing pipeline from PDF lines to FlightEvent objects
         
         Args:
             lines: List of text lines from PDF
+            cutoff_datetime: Only include flights after this datetime (optional)
             
         Returns:
-            List of FlightEvent objects
+            List of FlightEvent objects (filtered by cutoff if provided)
             
         Raises:
             RosterParsingError: If parsing fails
@@ -183,10 +184,26 @@ class RosterParser:
             
             # Parse flights into events
             events = []
-            for flight_line in flight_lines:
+            for i, flight_line in enumerate(flight_lines):
                 event = cls.parse_flight_to_event(flight_line, period_start, period_end)
                 if event:
-                    events.append(event)
+                    # Apply cutoff filtering if provided
+                    if cutoff_datetime:
+                        # Determine if we should use period_end (for month rollover)
+                        use_period_end = (
+                            i > 0 and 
+                            events and  # Check if events list has items
+                            events[-1].day_of_month > event.day_of_month
+                        )
+                        
+                        departure_dt = event.get_departure_datetime(use_period_end)
+                        
+                        # Only add flights after cutoff
+                        if departure_dt > cutoff_datetime:
+                            events.append(event)
+                    else:
+                        # No filtering, add all flights
+                        events.append(event)
             
             return events
         

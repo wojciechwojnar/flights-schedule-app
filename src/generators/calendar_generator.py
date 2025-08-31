@@ -12,13 +12,12 @@ class CalendarGenerator:
     """Generates ICS calendar files from flight events"""
     
     @staticmethod
-    def create_ics_from_events(events: List[FlightEvent], cutoff_date: datetime) -> str:
+    def create_ics_from_events(events: List[FlightEvent]) -> str:
         """
         Create ICS calendar content from flight events
         
         Args:
-            events: List of FlightEvent objects
-            cutoff_date: Only include flights after this date
+            events: List of FlightEvent objects (pre-filtered)
             
         Returns:
             ICS calendar content as string
@@ -38,10 +37,6 @@ class CalendarGenerator:
                 
                 departure_dt = flight.get_departure_datetime(use_period_end)
                 arrival_dt = flight.get_arrival_datetime(use_period_end)
-                
-                # Skip flights before cutoff date
-                if departure_dt <= cutoff_date:
-                    continue
                 
                 event = Event()
                 event.name = flight.display_name
@@ -98,15 +93,13 @@ Tracker: {flight.tracker_url}"""
     @classmethod
     def create_calendar_package(
         cls, 
-        events: List[FlightEvent], 
-        cutoff_date: datetime
+        events: List[FlightEvent]
     ) -> tuple[str, str]:
         """
         Create complete calendar package with content and filename
         
         Args:
-            events: List of FlightEvent objects
-            cutoff_date: Only include flights after this date
+            events: List of FlightEvent objects (pre-filtered)
             
         Returns:
             Tuple of (ics_content, filename)
@@ -114,6 +107,6 @@ Tracker: {flight.tracker_url}"""
         Raises:
             CalendarGenerationError: If calendar generation fails
         """
-        ics_content = cls.create_ics_from_events(events, cutoff_date)
+        ics_content = cls.create_ics_from_events(events)
         filename = cls.generate_filename(events)
         return ics_content, filename

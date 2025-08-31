@@ -10,6 +10,7 @@ from src.processors.pdf_processor import PDFProcessor
 from src.processors.roster_parser import RosterParser
 from src.generators.calendar_generator import CalendarGenerator
 from src.utils.exceptions import (
+    FlightRosterError, 
     PDFProcessingError, 
     RosterParsingError, 
     CalendarGenerationError
@@ -23,25 +24,42 @@ st.set_page_config(
 )
 
 
-def process_roster_pdf(pdf_file):
+def process_roster_pdf(pdf_file, cutoff_datetime=None):
     """
     Process uploaded roster PDF and extract flight events
     
     Args:
         pdf_file: Streamlit uploaded file object
+        cutoff_datetime: Only include flights after this datetime (optional)
         
     Returns:
         List of FlightEvent objects or empty list on error
     """
     try:
         # Extract text from PDF
+        st.write("🔍 Extracting text from PDF...")
         lines = PDFProcessor.extract_text_from_pdf(pdf_file)
+        st.write(f"✅ Extracted {len(lines)} lines from PDF")
         
         # Validate PDF structure
+        st.write("🔍 Validating PDF structure...")
         PDFProcessor.validate_pdf_structure(lines)
+        st.write("✅ PDF structure validation passed")
         
-        # Parse flights from PDF lines
-        events = RosterParser.parse_flights_from_pdf_lines(lines)
+        # Parse flights from PDF lines (with cutoff filtering)
+        st.write("🔍 Parsing flights from PDF...")
+        events = RosterParser.parse_flights_from_pdf_lines(lines, cutoff_datetime)
+        if cutoff_datetime:
+            st.write(f"✅ Found {len(events)} flight events after {cutoff_datetime.date()}")
+        else:
+            st.write(f"✅ Found {len(events)} flight events")
+        
+        # Show some debug info
+        if events:
+            st.write("📋 First few flights found:")
+            for i, event in enumerate(events[:3]):
+                departure_dt = event.get_departure_datetime()
+                st.write(f"  - LO{event.flight_no}: {event.departure_airport} → {event.destination_airport} ({departure_dt.strftime('%Y-%m-%d %H:%M')})")
         
         return events
     
@@ -53,22 +71,22 @@ def process_roster_pdf(pdf_file):
         return []
     except Exception as e:
         st.error(f"Unexpected error: {e}")
+        st.exception(e)  # This will show the full traceback
         return []
 
 
-def create_calendar_file(events, cutoff_date):
+def create_calendar_file(events):
     """
     Create ICS calendar file from flight events
     
     Args:
-        events: List of FlightEvent objects
-        cutoff_date: DateTime object for filtering flights
+        events: List of FlightEvent objects (pre-filtered)
         
     Returns:
         Tuple of (ics_content, filename) or (None, None) on error
     """
     try:
-        return CalendarGenerator.create_calendar_package(events, cutoff_date)
+        return CalendarGenerator.create_calendar_package(events)
     except CalendarGenerationError as e:
         st.error(f"Calendar Generation Error: {e}")
         return None, None
@@ -173,15 +191,15 @@ def main():
             
         if st.button("🚀 Process PDF", type="primary"):
             with st.spinner("Processing PDF..."):
-                # Extract events
-                events = process_roster_pdf(uploaded_file)
+                # Extract events with cutoff filtering
+                events = process_roster_pdf(uploaded_file, cutoff_datetime)
                 
                 if events:
                     # Store in session state
                     st.session_state.events = events
                     st.session_state.processed_file_name = uploaded_file.name
                     
-                    st.success(f"✅ Found {len(events)} flights in the roster")
+                    st.success(f"✅ Found {len(events)} flights after {cutoff_date}")
                     
                     # Display extracted flights
                     st.header("📅 Extracted Flights")
@@ -189,7 +207,7 @@ def main():
                     
                     # Generate and offer calendar download
                     with st.spinner("Generating calendar file..."):
-                        ics_content, filename = create_calendar_file(events, cutoff_datetime)
+                        ics_content, filename = create_calendar_file(events)
                         
                         if ics_content and filename:
                             st.success("✅ Calendar file generated successfully!")
@@ -212,7 +230,7 @@ def main():
                                - **Apple Calendar**: File → Import
                             """)
                 else:
-                    st.error("❌ No flights found in the PDF. Please check if the file format is correct.")
+                    st.error(f"❌ No flights found after {cutoff_date}. Try adjusting the cutoff date.")
     else:
         with status_placeholder.container():
             st.info("👆 Please upload a PDF file to get started")
@@ -221,20 +239,31 @@ def main():
     if st.session_state.events and st.session_state.processed_file_name:
         st.header("📅 Previously Processed Flights")
         st.caption(f"From file: {st.session_state.processed_file_name}")
-        display_flight_summary(st.session_state.events)
         
-        # Offer re-download
-        with st.spinner("Regenerating calendar file..."):
-            ics_content, filename = create_calendar_file(st.session_state.events, cutoff_datetime)
+        # Re-filter cached events based on current cutoff
+        filtered_events = []
+        for event in st.session_state.events:
+            departure_dt = event.get_departure_datetime()
+            if departure_dt > cutoff_datetime:
+                filtered_events.append(event)
+        
+        if filtered_events:
+            display_flight_summary(filtered_events)
             
-            if ics_content and filename:
-                st.download_button(
-                    label="📥 Re-download Calendar (.ics)",
-                    data=ics_content,
-                    file_name=filename,
-                    mime="text/calendar",
-                    key="redownload"
-                )
+            # Offer re-download with current cutoff
+            with st.spinner("Regenerating calendar file..."):
+                ics_content, filename = create_calendar_file(filtered_events)
+                
+                if ics_content and filename:
+                    st.download_button(
+                        label="📥 Re-download Calendar (.ics)",
+                        data=ics_content,
+                        file_name=filename,
+                        mime="text/calendar",
+                        key="redownload"
+                    )
+        else:
+            st.info(f"No cached flights found after {cutoff_date}. Process a new PDF or adjust the cutoff date.")
 
 
 if __name__ == "__main__":
