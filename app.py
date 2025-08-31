@@ -171,13 +171,15 @@ def main():
         st.header("Settings")
         cutoff_date = st.date_input(
             "Cutoff Date",
-            value=datetime.now().date(),
+            value=None,
             help="Flights before this date will be excluded from the calendar"
         )
-        
-        # Convert date to datetime with timezone
-        cutoff_datetime = datetime.combine(cutoff_date, datetime.min.time())
-        cutoff_datetime = cutoff_datetime.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+        if cutoff_date:
+            # Convert date to datetime with timezone
+            cutoff_datetime = datetime.combine(cutoff_date, datetime.min.time())
+            cutoff_datetime = cutoff_datetime.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+        else:
+            cutoff_datetime = None
     
     with col2:
         st.header("Status")
