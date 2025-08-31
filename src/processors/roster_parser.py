@@ -3,6 +3,7 @@ Roster parsing utilities
 """
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import List, Optional, Tuple
 from ..models.flight_event import FlightEvent
 from ..utils.exceptions import RosterParsingError
@@ -40,7 +41,7 @@ class RosterParser:
         try:
             match = cls.CUTOFF_DATETIME_PATTERN.search(lines[0])
             if match:
-                min_cutoff_datetime = datetime.strptime(match.group(1), "%d%b%y")
+                min_cutoff_datetime = datetime.strptime(match.group(1), "%d%b%y").astimezone(ZoneInfo("Europe/Warsaw"))
             else:
                 raise RosterParsingError("Cannot parse cutoff from PDF header. Expected format not found.")
             period_parts = lines[1].split(" ")
