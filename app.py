@@ -48,21 +48,10 @@ def process_roster_pdf(pdf_file, cutoff_datetime=None):
         
         # Parse flights from PDF lines (with cutoff filtering)
         st.write("🔍 Parsing flights from PDF...")
-        events, min_cutoff_datetime = RosterParser.parse_flights_from_pdf_lines(lines)
-        if cutoff_datetime and (cutoff_datetime > min_cutoff_datetime):
-            events = [event for event in events if (event.departure_datetime.date() >= cutoff_datetime.date()) 
-                      & (event.departure_datetime is not None)]
-            st.write(f"✅ Found {len(events)} flight events after {cutoff_datetime.date()}")
-        elif cutoff_datetime and (cutoff_datetime <= min_cutoff_datetime):
-            events = [event for event in events if (event.departure_datetime.date() >= min_cutoff_datetime.date()) 
-                      & (event.departure_datetime is not None)]
-            st.write(f"Selected earlier cutoff date than minimal expected, changing to minimal based on file {min_cutoff_datetime.strftime("%Y-%m-%d")}")
-            st.write(f"✅ Found {len(events)} flight events after {min_cutoff_datetime.date()}")
-        else:
-            st.write(f"Cutoff datetime was not selected, changing to minimal based on file {min_cutoff_datetime.strftime("%Y-%m-%d")}")
-            events = [event for event in events if (event.departure_datetime.date() >= min_cutoff_datetime.date()) 
-                      & (event.departure_datetime is not None)]
-            st.write(f"✅ Found {len(events)} flight events after {min_cutoff_datetime.date()}")
+        events = RosterParser.parse_flights_from_pdf_lines(lines)
+        events = [event for event in events if (event.departure_datetime.date() >= cutoff_datetime.date()) 
+                    & (event.departure_datetime is not None)]
+        st.write(f"✅ Found {len(events)} flight events after {cutoff_datetime.date()}")
         
         # Show some debug info
         if events:
@@ -141,7 +130,8 @@ def render_sidebar():
     - Flight numbers starting with 'LO'
     - Standard airport codes
     """)
-    
+    # TODO add technical limitations, like for example not handling "overnight" flights, 
+    # but could be added when presented with exemplar files
     st.sidebar.header("🔧 Technical Info")
     st.sidebar.markdown("""
     **File Limits:**
@@ -195,8 +185,8 @@ def main():
         st.header("Settings")
         cutoff_date = st.date_input(
             "Cutoff Date",
-            value=None,
-            help="Flights before this date will be excluded from the calendar"
+            min_value=datetime.today(),
+            help="Flights before this date will be excluded from the calendar",
         )
         if cutoff_date:
             # Convert date to datetime with timezone

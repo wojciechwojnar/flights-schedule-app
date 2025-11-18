@@ -39,18 +39,13 @@ class RosterParser:
             raise RosterParsingError("PDF doesn't contain enough data to parse period.")
         
         try:
-            match = cls.CUTOFF_DATETIME_PATTERN.search(lines[0])
-            if match:
-                min_cutoff_datetime = datetime.strptime(match.group(1), "%d%b%y").astimezone(ZoneInfo("Europe/Warsaw"))
-            else:
-                raise RosterParsingError("Cannot parse cutoff from PDF header. Expected format not found.")
             period_parts = lines[1].split(" ")
             if len(period_parts) < 3:
                 raise RosterParsingError("Cannot parse period from PDF header. Expected format not found.")
             
             period_start = datetime.strptime(period_parts[1], "%d%b%y")
             period_end = datetime.strptime(period_parts[2], "%d%b%y")
-            return period_start, period_end, min_cutoff_datetime
+            return period_start, period_end
         except (ValueError, IndexError) as e:
             raise RosterParsingError(f"Error parsing period dates: {e}")
     
@@ -70,7 +65,7 @@ class RosterParser:
         collecting = False
         current_day = None
         current_weekday = None
-        
+        # TODO add other entries than actual flights
         for line in lines[3:]:  # Skip header lines
             # Check for workday start
             workday_match = cls.WORKDAY_PATTERN.match(line)
@@ -181,7 +176,7 @@ class RosterParser:
         """
         try:
             # Parse period information
-            period_start, period_end, min_cutoff_datetime = cls.parse_period(lines)
+            period_start, period_end = cls.parse_period(lines)
             
             # Extract work sections
             sections = cls.extract_work_sections(lines)
@@ -205,7 +200,7 @@ class RosterParser:
                     event.set_arrival_datetime(use_period_end)
                     events.append(event)
                     prev_event = event
-            return events, min_cutoff_datetime
+            return events
         
         except Exception as e:
             if isinstance(e, RosterParsingError):
