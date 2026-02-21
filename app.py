@@ -101,7 +101,7 @@ def display_flight_summary(events):
     flight_data = []
     for event in events:
         flight_data.append({
-            "Date": f"{event.departure_datetime.strftime("%Y-%m-%d")}",
+            "Date": f"{event.departure_datetime.strftime('%Y-%m-%d')}",
             "Flight": f"LO{event.flight_no}",
             "Route": f"{event.departure_airport} → {event.destination_airport}",
             "Departure": f"{event.departure_time[:2]}:{event.departure_time[2:]}",
